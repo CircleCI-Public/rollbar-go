@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -46,14 +46,14 @@ func testErrorStackWithSkipGeneric2(s string) {
 }
 
 func TestErrorClass(t *testing.T) {
-	errors := map[string]error{
+	errs := map[string]error{
 		// generic error
 		"errors.errorString": fmt.Errorf("something is broken"),
 		// custom error
 		"rollbar.CustomError": &CustomError{"terrible mistakes were made"},
 	}
 
-	for expected, err := range errors {
+	for expected, err := range errs {
 		if errorClass(err) != expected {
 			t.Error("Got:", errorClass(err), "Expected:", expected)
 		}
@@ -71,7 +71,7 @@ func TestEverything(t *testing.T) {
 		t.Error("Token should be as set")
 	}
 
-	ErrorWithLevel("critical", errors.New("Normal critical error"))
+	ErrorWithLevel("critical", errors.New("normal critical error"))
 	ErrorWithLevel("error", &CustomError{"This is a custom error"})
 
 	testErrorStack("This error should have a nice stacktrace")
@@ -94,11 +94,12 @@ func TestEverything(t *testing.T) {
 	r, _ := http.NewRequest("GET", "http://foo.com/somethere?param1=true", nil)
 	r.RemoteAddr = "1.1.1.1:123"
 
-	RequestMessage("debug", r, "This is a debug message with a request")
+	client := NewAsync("", "development", "", hostname, "")
+	client.RequestMessage("debug", r, "This is a debug message with a request")
 	SetCaptureIp(CaptureIpAnonymize)
-	RequestError("info", r, errors.New("Some info error with a request"))
+	RequestError("info", r, errors.New("some info error with a request"))
 	r.RemoteAddr = "FE80::0202:B3FF:FE1E:8329"
-	RequestErrorWithStackSkip("info", r, errors.New("Some info error with a request"), 2)
+	RequestErrorWithStackSkip("info", r, errors.New("some info error with a request"), 2)
 
 	Wait()
 }
@@ -115,7 +116,8 @@ func TestSetContext(t *testing.T) {
 	if tr.getContext() != context.Background() {
 		t.Error("Transport ctx must be properly set")
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
 	SetContext(ctx)
 	if std.ctx != ctx {
 		t.Error("Client ctx must be properly set")
@@ -126,17 +128,19 @@ func TestSetContext(t *testing.T) {
 }
 
 func TestEverythingGeneric(t *testing.T) {
-	SetToken(os.Getenv("TOKEN"))
-	SetEnvironment("test")
-	SetPerson("1", "user", "email", WithPersonExtra(map[string]string{"v": "k"}))
-	SetCaptureIp(CaptureIpAnonymize)
-	if Token() != os.Getenv("TOKEN") {
+	hostname, _ = os.Hostname()
+	client := NewAsync("", "development", "", hostname, "")
+	client.SetToken(os.Getenv("TOKEN"))
+	client.SetEnvironment("test")
+	client.SetPerson("1", "user", "email", WithPersonExtra(map[string]string{"v": "k"}))
+	client.SetCaptureIp(CaptureIpAnonymize)
+	if client.Token() != os.Getenv("TOKEN") {
 		t.Error("Token should be as set")
 	}
-	if Environment() != "test" {
+	if client.Environment() != "test" {
 		t.Error("Token should be as set")
 	}
-	Critical(errors.New("Normal generic critical error"))
+	Critical(errors.New("normal generic critical error"))
 	Error(&CustomError{"This is a generic custom error"})
 
 	testErrorStackWithSkipGeneric("This generic error should have a skipped stacktrace")
@@ -153,21 +157,21 @@ func TestEverythingGeneric(t *testing.T) {
 		"hello": "rollbar",
 	})
 
-	SetItemsPerMinute(2000)
-	SetRetryAttempts(123)
-	SetLogger(&SilentClientLogger{})
+	client.SetItemsPerMinute(2000)
+	client.SetRetryAttempts(123)
+	client.SetLogger(&SilentClientLogger{})
 	Info(someNonstandardTypeForLogFailing{}, "I am a string and I did not fail")
-	SetLogger(nil)
+	client.SetLogger(nil)
 
 	r, _ := http.NewRequest("GET", "http://foo.com/somethere?param1=true", nil)
 	r.RemoteAddr = "1.1.1.1:123"
 
 	Debug(r, "This is a message with a generic request")
-	Warning(errors.New("Some generic error with a request"), r, map[string]interface{}{
+	Warning(errors.New("some generic error with a request"), r, map[string]interface{}{
 		"hello": "request",
 	})
 
-	Close()
+	_ = client.Close()
 }
 
 func TestBuildBody(t *testing.T) {
@@ -452,14 +456,14 @@ func TestDefaultUnwrapper(t *testing.T) {
 	t.Run("unwrap", func(t *testing.T) {
 		wrapped := fmt.Errorf("wrapped")
 		parent := uw{fmt.Errorf("parent"), wrapped}
-		if wrapped != DefaultUnwrapper(parent) {
+		if !errors.Is(wrapped, DefaultUnwrapper(parent)) {
 			t.Error("parent should return wrapped")
 		}
 	})
 	t.Run("CauseStacker", func(t *testing.T) {
 		cause := fmt.Errorf("cause")
 		effect := cs{fmt.Errorf("effect"), cause, nil}
-		if cause != DefaultUnwrapper(effect) {
+		if !errors.Is(cause, DefaultUnwrapper(effect)) {
 			t.Error("effect should return cause")
 		}
 	})
@@ -615,14 +619,15 @@ func TestSetUnwrapper(t *testing.T) {
 	}
 
 	client.SetUnwrapper(func(err error) error {
-		if e, ok := err.(myCustomError); ok {
+		var e myCustomError
+		if errors.As(err, &e) {
 			return e.wrapped
 		}
 
 		return nil
 	})
 
-	if client.configuration.unwrapper(parent) != child {
+	if !errors.Is(child, client.configuration.unwrapper(parent)) {
 		t.Error("error did not unwrap correctly")
 	}
 }
@@ -641,7 +646,8 @@ func TestSetStackTracer(t *testing.T) {
 	}
 
 	client.SetStackTracer(func(err error) (frames []runtime.Frame, b bool) {
-		if e, ok := err.(myCustomError); ok {
+		var e myCustomError
+		if errors.As(err, &e) {
 			return e.trace, true
 		}
 
@@ -666,7 +672,8 @@ func (s roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestNewAsyncWithContext(t *testing.T) {
-	ctx, _ := context.WithTimeout(context.Background(), 4*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	t.Cleanup(cancel)
 	client := NewAsync("example", "test", "0.0.0", "", "", WithClientContext(ctx))
 	if client.ctx != ctx {
 		t.Error("Client ctx must be properly set")
@@ -683,7 +690,7 @@ func TestSetHttpClient(t *testing.T) {
 			used = true
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       ioutil.NopCloser(strings.NewReader("")),
+				Body:       io.NopCloser(strings.NewReader("")),
 			}, nil
 		}),
 	}

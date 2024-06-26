@@ -30,9 +30,9 @@ type Client struct {
 	diagnostic    diagnostic
 }
 
-type clientOption func(*Client)
+type ClientOption func(*Client)
 
-func WithClientContext(ctx context.Context) clientOption {
+func WithClientContext(ctx context.Context) ClientOption {
 	return func(c *Client) {
 		c.ctx = ctx
 	}
@@ -45,7 +45,7 @@ func New(token, environment, codeVersion, serverHost, serverRoot string) *Client
 }
 
 // NewAsync builds a Client with the asynchronous implementation of the transport interface.
-func NewAsync(token, environment, codeVersion, serverHost, serverRoot string, opts ...clientOption) *Client {
+func NewAsync(token, environment, codeVersion, serverHost, serverRoot string, opts ...ClientOption) *Client {
 	configuration := createConfiguration(token, environment, codeVersion, serverHost, serverRoot)
 	transport := NewTransport(token, configuration.endpoint)
 	diagnostic := createDiagnostic()
@@ -216,10 +216,12 @@ func (c *Client) SetScrubFields(fields *regexp.Regexp) {
 // SetTransform sets the transform function called after the entire payload has been built before it
 // is sent to the API.
 // The structure of the final payload sent to the API is:
-//   {
-//       "access_token": "YOUR_ACCESS_TOKEN",
-//       "data": { ... }
-//   }
+//
+//	{
+//	    "access_token": "YOUR_ACCESS_TOKEN",
+//	    "data": { ... }
+//	}
+//
 // This function takes a map[string]interface{} which is the value of the data key in the payload
 // described above. You can modify this object in-place to make any arbitrary changes you wish to
 // make before it is finally sent. Be careful with the modifications you make as they could lead to

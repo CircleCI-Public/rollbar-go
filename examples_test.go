@@ -3,7 +3,7 @@ package rollbar_test
 import (
 	"errors"
 
-	"github.com/rollbar/rollbar-go"
+	"github.com/CircleCI-Public/rollbar-go"
 )
 
 func ExampleCritical_error() {

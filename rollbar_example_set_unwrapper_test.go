@@ -1,6 +1,10 @@
 package rollbar_test
 
-import "github.com/rollbar/rollbar-go"
+import (
+	"errors"
+
+	"github.com/CircleCI-Public/rollbar-go"
+)
 
 type CustomWrappingError struct {
 	error
@@ -18,7 +22,8 @@ func ExampleSetUnwrapper() {
 			return unwrapped
 		}
 
-		if ex, ok := err.(CustomWrappingError); ok {
+		var ex CustomWrappingError
+		if errors.As(err, &ex) {
 			return ex.GetWrappedError()
 		}
 

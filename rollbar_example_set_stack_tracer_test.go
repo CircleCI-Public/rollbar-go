@@ -1,9 +1,10 @@
 package rollbar_test
 
 import (
+	"errors"
 	"runtime"
 
-	"github.com/rollbar/rollbar-go"
+	"github.com/CircleCI-Public/rollbar-go"
 )
 
 type CustomTraceError struct {
@@ -22,7 +23,8 @@ func ExampleSetStackTracer() {
 			return trace, ok
 		}
 
-		if cerr, ok := err.(CustomTraceError); ok {
+		var cerr CustomTraceError
+		if errors.As(err, &cerr) {
 			return cerr.GetTrace(), true
 		}
 

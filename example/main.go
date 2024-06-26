@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/rollbar/rollbar-go"
+	"github.com/CircleCI-Public/rollbar-go"
 )
 
 func helloJson(w http.ResponseWriter, r *http.Request) {
@@ -46,11 +46,14 @@ func helloForm(w http.ResponseWriter, r *http.Request) {
 
 // In one terminal: TOKEN=POST_SERVER_ITEM_ACCESS_TOKEN go run example/main.go
 // In another:
-//    curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
-//      http://localhost:9090/form -d "password=foobar&fuzz=buzz"
+//
+//	curl -X POST -H "Content-Type: application/x-www-form-urlencoded" \
+//	  http://localhost:9090/form -d "password=foobar&fuzz=buzz"
+//
 // Or:
-//    curl -X POST -H "Content-Type: application/json" \
-//      http://localhost:9090/json -d '{"password":"foobar","fuzz":"buzz"}'
+//
+//	curl -X POST -H "Content-Type: application/json" \
+//	  http://localhost:9090/json -d '{"password":"foobar","fuzz":"buzz"}'
 func main() {
 	var token = os.Getenv("TOKEN")
 	rollbar.SetToken(token)
